@@ -2,6 +2,9 @@
   <img src="nanobot_logo.png" alt="nanobot" width="500">
   <h1>nanobot: Ultra-Lightweight Personal AI Assistant</h1>
   <p>
+    <a href="./README_zh-CN.md">中文</a> | <a href="./README.md">English</a>
+  </p>
+  <p>
     <a href="https://pypi.org/project/nanobot-ai/"><img src="https://img.shields.io/pypi/v/nanobot-ai" alt="PyPI"></a>
     <a href="https://pepy.tech/project/nanobot-ai"><img src="https://static.pepy.tech/badge/nanobot-ai" alt="Downloads"></a>
     <img src="https://img.shields.io/badge/python-≥3.11-blue" alt="Python">
@@ -298,17 +301,23 @@ Config file: `~/.nanobot/config.json`
 
 ### Providers
 
-> [!NOTE]
-> Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
+nanobot supports **almost all LLM providers** via OpenAI compatibility. You can configure any provider that supports the OpenAI API format.
+
+Common providers include:
 
 | Provider | Purpose | Get API Key |
 |----------|---------|-------------|
-| `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic` | LLM (Claude direct) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` | LLM (GPT direct) | [platform.openai.com](https://platform.openai.com) |
-| `groq` | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com) |
-| `gemini` | LLM (Gemini direct) | [aistudio.google.com](https://aistudio.google.com) |
+| `openrouter` | Access to all models (Recommended) | [openrouter.ai](https://openrouter.ai) |
+| `deepseek` | DeepSeek models (China) | [deepseek.com](https://platform.deepseek.com) |
+| `zhipu` | GLM models (China) | [bigmodel.cn](https://open.bigmodel.cn) |
+| `qwen` | Qwen models (China) | [dashscope.aliyun.com](https://dashscope.aliyun.com) |
+| `anthropic` | Claude models | [console.anthropic.com](https://console.anthropic.com) |
+| `openai` | GPT models | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | Gemini models | [aistudio.google.com](https://aistudio.google.com) |
+| `groq` | Fast inference + Whisper | [console.groq.com](https://console.groq.com) |
+| `vllm` | Local models | - |
 
+You can add **any custom provider** in `config.json` by adding a new key under `providers` with `apiBase` and `apiKey`.
 
 <details>
 <summary><b>Full config example</b></summary>
@@ -317,15 +326,19 @@ Config file: `~/.nanobot/config.json`
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model": "deepseek/deepseek-chat"
     }
   },
   "providers": {
     "openrouter": {
       "apiKey": "sk-or-v1-xxx"
     },
-    "groq": {
-      "apiKey": "gsk_xxx"
+    "deepseek": {
+      "apiKey": "sk-xxx"
+    },
+    "custom_provider": {
+      "apiBase": "https://api.example.com/v1",
+      "apiKey": "sk-xxx"
     }
   },
   "channels": {

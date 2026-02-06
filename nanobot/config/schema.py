@@ -59,13 +59,11 @@ class ProviderConfig(BaseModel):
 
 class ProvidersConfig(BaseModel):
     """Configuration for LLM providers."""
-    anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
-    openai: ProviderConfig = Field(default_factory=ProviderConfig)
-    openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
-    groq: ProviderConfig = Field(default_factory=ProviderConfig)
-    zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
-    vllm: ProviderConfig = Field(default_factory=ProviderConfig)
-    gemini: ProviderConfig = Field(default_factory=ProviderConfig)
+    model_config = {"extra": "allow"}
+
+    # No hardcoded fields, everything is dynamic via extra fields
+    # Users can add "openai": {...}, "deepseek": {...} etc.
+    pass
 
 
 class GatewayConfig(BaseModel):
@@ -110,27 +108,75 @@ class Config(BaseSettings):
         """Get expanded workspace path."""
         return Path(self.agents.defaults.workspace).expanduser()
     
-    def get_api_key(self) -> str | None:
-        """Get API key in priority order: OpenRouter > Anthropic > OpenAI > Gemini > Zhipu > Groq > vLLM."""
-        return (
-            self.providers.openrouter.api_key or
-            self.providers.anthropic.api_key or
-            self.providers.openai.api_key or
-            self.providers.gemini.api_key or
-            self.providers.zhipu.api_key or
-            self.providers.groq.api_key or
-            self.providers.vllm.api_key or
-            None
-        )
+    def get_provider_config(self, model: str | None = None) -> tuple[str, ProviderConfig | dict] | None:
+        """Resolve the provider configuration for a given model."""
+        target_model = model or self.agents.defaults.model
+        
+        # 1. Try to find provider by model prefix (e.g. "deepseek/..." -> providers.deepseek)
+        if target_model and "/" in target_model:
+            provider_name = target_model.split("/")[0]
+            
+            # Use getattr which handles both standard fields and allowed extra fields
+            provider = getattr(self.providers, provider_name, None)
+            # If not found via getattr, check pydantic extra fields explicitly
+            if not provider and self.providers.__pydantic_extra__:
+                provider = self.providers.__pydantic_extra__.get(provider_name)
+
+            if provider and isinstance(provider, (ProviderConfig, dict)):
+                return provider_name, provider
+
+        # 2. Fallback: iterate over all configured providers and return the first valid one
+        # This replaces the hardcoded priority list. We trust the order in config or just pick any.
+        # Since we don't have hardcoded fields anymore, we rely on __pydantic_extra__
+        if self.providers.__pydantic_extra__:
+             # Prioritize common providers if they exist, to have some deterministic behavior
+             # but dynamically based on what's present
+             priority_hint = ["openrouter", "anthropic", "openai", "gemini", "zhipu", "groq", "vllm", "deepseek", "qwen", "mistral"]
+             
+             # First pass: check priority list
+             for name in priority_hint:
+                 if name in self.providers.__pydantic_extra__:
+                     provider = self.providers.__pydantic_extra__[name]
+                     api_key = self._extract_api_key(provider)
+                     if api_key:
+                         return name, provider
+            
+             # Second pass: check any other provider
+             for name, provider in self.providers.__pydantic_extra__.items():
+                 if name not in priority_hint:
+                     api_key = self._extract_api_key(provider)
+                     if api_key:
+                         return name, provider
+            
+        return None
+
+    def _extract_api_key(self, provider: ProviderConfig | dict) -> str | None:
+        if isinstance(provider, ProviderConfig):
+            return provider.api_key
+        elif isinstance(provider, dict):
+            return provider.get("api_key") or provider.get("apiKey")
+        return None
+
+    def get_api_key(self, model: str | None = None) -> str | None:
+        """Get API key based on model prefix or priority order."""
+        result = self.get_provider_config(model)
+        if result:
+            _, provider = result
+            if isinstance(provider, ProviderConfig):
+                return provider.api_key
+            elif isinstance(provider, dict):
+                return provider.get("api_key") or provider.get("apiKey")
+        return None
     
-    def get_api_base(self) -> str | None:
-        """Get API base URL if using OpenRouter, Zhipu or vLLM."""
-        if self.providers.openrouter.api_key:
-            return self.providers.openrouter.api_base or "https://openrouter.ai/api/v1"
-        if self.providers.zhipu.api_key:
-            return self.providers.zhipu.api_base
-        if self.providers.vllm.api_base:
-            return self.providers.vllm.api_base
+    def get_api_base(self, model: str | None = None) -> str | None:
+        """Get API base URL based on model prefix or priority order."""
+        result = self.get_provider_config(model)
+        if result:
+            _, provider = result
+            if isinstance(provider, ProviderConfig):
+                return provider.api_base
+            elif isinstance(provider, dict):
+                return provider.get("api_base") or provider.get("apiBase")
         return None
     
     class Config:

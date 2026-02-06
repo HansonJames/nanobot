@@ -160,7 +160,7 @@ def gateway(
     """Start the nanobot gateway."""
     from nanobot.config.loader import load_config, get_data_dir
     from nanobot.bus.queue import MessageBus
-    from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.providers.langchain_provider import LangChainProvider
     from nanobot.agent.loop import AgentLoop
     from nanobot.channels.manager import ChannelManager
     from nanobot.cron.service import CronService
@@ -179,9 +179,16 @@ def gateway(
     bus = MessageBus()
     
     # Create provider (supports OpenRouter, Anthropic, OpenAI, Bedrock)
-    api_key = config.get_api_key()
-    api_base = config.get_api_base()
+    from nanobot.providers.langchain_provider import LangChainProvider
+    
     model = config.agents.defaults.model
+    api_key = config.get_api_key(model)
+    api_base = config.get_api_base(model)
+    
+    # Get provider name
+    provider_config = config.get_provider_config(model)
+    provider_name = provider_config[0] if provider_config else None
+    
     is_bedrock = model.startswith("bedrock/")
 
     if not api_key and not is_bedrock:
@@ -189,10 +196,11 @@ def gateway(
         console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
         raise typer.Exit(1)
     
-    provider = LiteLLMProvider(
+    provider = LangChainProvider(
         api_key=api_key,
         api_base=api_base,
-        default_model=config.agents.defaults.model
+        default_model=config.agents.defaults.model,
+        provider_name=provider_name
     )
     
     # Create agent
@@ -285,14 +293,19 @@ def agent(
     """Interact with the agent directly."""
     from nanobot.config.loader import load_config
     from nanobot.bus.queue import MessageBus
-    from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.providers.langchain_provider import LangChainProvider
     from nanobot.agent.loop import AgentLoop
     
     config = load_config()
     
-    api_key = config.get_api_key()
-    api_base = config.get_api_base()
     model = config.agents.defaults.model
+    api_key = config.get_api_key(model)
+    api_base = config.get_api_base(model)
+    
+    # Get provider name
+    provider_config = config.get_provider_config(model)
+    provider_name = provider_config[0] if provider_config else None
+    
     is_bedrock = model.startswith("bedrock/")
 
     if not api_key and not is_bedrock:
@@ -300,10 +313,11 @@ def agent(
         raise typer.Exit(1)
 
     bus = MessageBus()
-    provider = LiteLLMProvider(
+    provider = LangChainProvider(
         api_key=api_key,
         api_base=api_base,
-        default_model=config.agents.defaults.model
+        default_model=config.agents.defaults.model,
+        provider_name=provider_name
     )
     
     agent_loop = AgentLoop(
@@ -638,18 +652,32 @@ def status():
         console.print(f"Model: {config.agents.defaults.model}")
         
         # Check API keys
-        has_openrouter = bool(config.providers.openrouter.api_key)
-        has_anthropic = bool(config.providers.anthropic.api_key)
-        has_openai = bool(config.providers.openai.api_key)
-        has_gemini = bool(config.providers.gemini.api_key)
-        has_vllm = bool(config.providers.vllm.api_base)
+        providers = config.providers.model_dump()
         
-        console.print(f"OpenRouter API: {'[green]✓[/green]' if has_openrouter else '[dim]not set[/dim]'}")
-        console.print(f"Anthropic API: {'[green]✓[/green]' if has_anthropic else '[dim]not set[/dim]'}")
-        console.print(f"OpenAI API: {'[green]✓[/green]' if has_openai else '[dim]not set[/dim]'}")
-        console.print(f"Gemini API: {'[green]✓[/green]' if has_gemini else '[dim]not set[/dim]'}")
-        vllm_status = f"[green]✓ {config.providers.vllm.api_base}[/green]" if has_vllm else "[dim]not set[/dim]"
-        console.print(f"vLLM/Local: {vllm_status}")
+        for name, data in sorted(providers.items()):
+            # Get status
+            api_key = config._extract_api_key(data)
+            
+            api_base = None
+            if isinstance(data, dict):
+                api_base = data.get("api_base") or data.get("apiBase")
+            else:
+                api_base = getattr(data, "api_base", None)
+            
+            has_key = bool(api_key)
+            has_base = bool(api_base)
+            
+            status_str = "[dim]not set[/dim]"
+            
+            if has_key:
+                status_str = "[green]✓[/green]"
+                if has_base:
+                    status_str += f" (Base: {api_base})"
+            elif has_base:
+                # vLLM or local might only have base
+                status_str = f"[green]✓ {api_base}[/green]"
+            
+            console.print(f"{name} API: {status_str}")
 
 
 if __name__ == "__main__":
